@@ -1,0 +1,16 @@
+# AgentChat（新版 AutoGen Python 栈）
+autogen-agentchat>=0.4.0
+autogen-ext[openai]>=0.4.0
+autogen-core>=0.4.0
+
+# OpenAI 客户端（autogen-ext 会依赖，此处显式列出便于环境排查）
+openai>=1.0.0
+
+# 数据与建模
+pandas>=2.0.0
+numpy>=1.24.0
+scikit-learn>=1.3.0
+matplotlib>=3.7.0
+
+# 配置
+python-dotenv>=1.0.0
