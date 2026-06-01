@@ -11,13 +11,22 @@ from autogen_agentchat.conditions import MaxMessageTermination, TextMentionTermi
 from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 
+from logging_config import get_logger
 from tools.data_tools import audit_dataset, profile_dataset
 from tools.modeling_tools import train_baseline_models
 
+logger = get_logger(__name__)
 
-def build_agents() -> RoundRobinGroupChat:
+
+def _create_model_client() -> OpenAIChatCompletionClient:
     """
-    构建模型客户端与 5 个 Agent，并返回配置好终止条件的 RoundRobinGroupChat。
+    创建 OpenAI 模型客户端。
+
+    Returns:
+        OpenAIChatCompletionClient 实例
+
+    Raises:
+        RuntimeError: 如果未设置 OPENAI_API_KEY 环境变量
     """
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
@@ -26,9 +35,24 @@ def build_agents() -> RoundRobinGroupChat:
         )
 
     model_name = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
-    model_client = OpenAIChatCompletionClient(model=model_name, api_key=api_key)
+    logger.info(f"创建模型客户端: {model_name}")
 
-    data_analyst = AssistantAgent(
+    return OpenAIChatCompletionClient(model=model_name, api_key=api_key)
+
+
+def _create_data_analyst_agent(
+    model_client: OpenAIChatCompletionClient,
+) -> AssistantAgent:
+    """
+    创建数据分析 Agent。
+
+    Args:
+        model_client: 模型客户端
+
+    Returns:
+        AssistantAgent 实例
+    """
+    return AssistantAgent(
         "DataAnalystAgent",
         model_client=model_client,
         tools=[profile_dataset],
@@ -46,7 +70,20 @@ def build_agents() -> RoundRobinGroupChat:
         ),
     )
 
-    data_auditor = AssistantAgent(
+
+def _create_data_auditor_agent(
+    model_client: OpenAIChatCompletionClient,
+) -> AssistantAgent:
+    """
+    创建数据审计 Agent。
+
+    Args:
+        model_client: 模型客户端
+
+    Returns:
+        AssistantAgent 实例
+    """
+    return AssistantAgent(
         "DataAuditorAgent",
         model_client=model_client,
         tools=[audit_dataset],
@@ -63,7 +100,20 @@ def build_agents() -> RoundRobinGroupChat:
         ),
     )
 
-    modeling = AssistantAgent(
+
+def _create_modeling_agent(
+    model_client: OpenAIChatCompletionClient,
+) -> AssistantAgent:
+    """
+    创建建模 Agent。
+
+    Args:
+        model_client: 模型客户端
+
+    Returns:
+        AssistantAgent 实例
+    """
+    return AssistantAgent(
         "ModelingAgent",
         model_client=model_client,
         tools=[train_baseline_models],
@@ -81,7 +131,20 @@ def build_agents() -> RoundRobinGroupChat:
         ),
     )
 
-    evaluation = AssistantAgent(
+
+def _create_evaluation_agent(
+    model_client: OpenAIChatCompletionClient,
+) -> AssistantAgent:
+    """
+    创建评估 Agent。
+
+    Args:
+        model_client: 模型客户端
+
+    Returns:
+        AssistantAgent 实例
+    """
+    return AssistantAgent(
         "EvaluationAgent",
         model_client=model_client,
         tools=[],
@@ -97,7 +160,20 @@ def build_agents() -> RoundRobinGroupChat:
         ),
     )
 
-    report = AssistantAgent(
+
+def _create_report_agent(
+    model_client: OpenAIChatCompletionClient,
+) -> AssistantAgent:
+    """
+    创建报告 Agent。
+
+    Args:
+        model_client: 模型客户端
+
+    Returns:
+        AssistantAgent 实例
+    """
+    return AssistantAgent(
         "ReportAgent",
         model_client=model_client,
         tools=[],
@@ -120,17 +196,42 @@ def build_agents() -> RoundRobinGroupChat:
         ),
     )
 
-    # 课程建议 12–15 条消息；含工具调用时略放宽，避免在 Report 前被截断
-    termination = TextMentionTermination("TERMINATE") | MaxMessageTermination(22)
 
-    team = RoundRobinGroupChat(
-        [
-            data_analyst,
-            data_auditor,
-            modeling,
-            evaluation,
-            report,
-        ],
-        termination_condition=termination,
-    )
-    return team
+def build_agents() -> RoundRobinGroupChat:
+    """
+    构建模型客户端与 5 个 Agent，并返回配置好终止条件的 RoundRobinGroupChat。
+
+    Returns:
+        配置好的 RoundRobinGroupChat 实例
+    """
+    logger.info("开始构建 Agent 团队")
+
+    try:
+        model_client = _create_model_client()
+
+        data_analyst = _create_data_analyst_agent(model_client)
+        data_auditor = _create_data_auditor_agent(model_client)
+        modeling = _create_modeling_agent(model_client)
+        evaluation = _create_evaluation_agent(model_client)
+        report = _create_report_agent(model_client)
+
+        # 课程建议 12–15 条消息；含工具调用时略放宽，避免在 Report 前被截断
+        termination = TextMentionTermination("TERMINATE") | MaxMessageTermination(22)
+
+        team = RoundRobinGroupChat(
+            [
+                data_analyst,
+                data_auditor,
+                modeling,
+                evaluation,
+                report,
+            ],
+            termination_condition=termination,
+        )
+
+        logger.info("Agent 团队构建完成")
+        return team
+
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"构建 Agent 团队时出错: {e}")
+        raise
